@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { Edit as EditIcon, Add as AddIcon, FilterList as FilterListIcon } from '@mui/icons-material';
 import { supabase } from '../lib/supabase';
+import { formatDate } from '../utils/dateFormat';
 
 interface Client {
   id: string;
@@ -33,6 +34,7 @@ interface Client {
   default_contact_name: string;
   default_contact_email: string;
   payment_method: string;
+  first_contract_date: string | null;
 }
 
 interface ClientFormData {
@@ -58,7 +60,7 @@ const initialFormData: ClientFormData = {
   department: '',
   default_contact_name: '',
   default_contact_email: '',
-  payment_method: '',
+  payment_method: '請求書払い',
 };
 
 const initialFilterData: FilterData = {
@@ -67,7 +69,7 @@ const initialFilterData: FilterData = {
   contact_name: '',
 };
 
-type SortField = 'name' | 'department' | 'default_contact_name' | 'payment_method';
+type SortField = 'name' | 'legal_type' | 'position' | 'department' | 'contact_person' | 'payment_method' | 'first_contract_date';
 type SortOrder = 'asc' | 'desc';
 
 export const ClientList = () => {
@@ -76,7 +78,7 @@ export const ClientList = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState<ClientFormData>(initialFormData);
-  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortField, setSortField] = useState<SortField>('first_contract_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [showFilters, setShowFilters] = useState(false);
   const [filterData, setFilterData] = useState<FilterData>(initialFilterData);
@@ -87,13 +89,31 @@ export const ClientList = () => {
 
   const fetchClients = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
-        .select('*')
-        .order('name');
+        .select('*');
 
-      if (error) throw error;
-      setClients(data || []);
+      if (clientsError) throw clientsError;
+
+      // 各クライアントの最古の契約開始日を取得
+      const clientPromises = clientsData.map(async (client) => {
+        const { data: contractData, error: contractError } = await supabase
+          .from('contracts')
+          .select('start_date')
+          .eq('client_id', client.id)
+          .order('start_date', { ascending: true })
+          .limit(1);
+
+        if (contractError) throw contractError;
+
+        return {
+          ...client,
+          first_contract_date: contractData?.[0]?.start_date || null
+        };
+      });
+
+      const clientsWithFirstContractDate = await Promise.all(clientPromises);
+      setClients(clientsWithFirstContractDate);
     } catch (error) {
       console.error('クライアント情報の取得に失敗しました:', error);
     } finally {
@@ -157,7 +177,6 @@ export const ClientList = () => {
   };
 
   const handleSort = (field: SortField) => {
-    console.log('Sorting by:', field);
     if (field === sortField) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -183,19 +202,24 @@ export const ClientList = () => {
     );
   });
 
-  const sortedClients = [...filteredClients].sort((a, b) => {
+  const sortedClients = [...clients].sort((a, b) => {
     const multiplier = sortOrder === 'asc' ? 1 : -1;
-    console.log('Current sort field:', sortField, 'Order:', sortOrder);
     
     switch (sortField) {
       case 'name':
         return multiplier * (a.name.localeCompare(b.name));
+      case 'legal_type':
+        return multiplier * ((a.legal_type || '').localeCompare(b.legal_type || ''));
+      case 'position':
+        return multiplier * ((a.legal_position || '').localeCompare(b.legal_position || ''));
       case 'department':
         return multiplier * ((a.department || '').localeCompare(b.department || ''));
-      case 'default_contact_name':
+      case 'contact_person':
         return multiplier * ((a.default_contact_name || '').localeCompare(b.default_contact_name || ''));
       case 'payment_method':
         return multiplier * ((a.payment_method || '').localeCompare(b.payment_method || ''));
+      case 'first_contract_date':
+        return multiplier * ((a.first_contract_date || '').localeCompare(b.first_contract_date || ''));
       default:
         return 0;
     }
@@ -289,29 +313,11 @@ export const ClientList = () => {
               </TableCell>
               <TableCell>
                 <TableSortLabel
-                  active={sortField === 'department'}
-                  direction={sortField === 'department' ? sortOrder : 'asc'}
-                  onClick={() => handleSort('department')}
+                  active={sortField === 'first_contract_date'}
+                  direction={sortField === 'first_contract_date' ? sortOrder : 'asc'}
+                  onClick={() => handleSort('first_contract_date')}
                 >
-                  部署
-                </TableSortLabel>
-              </TableCell>
-              <TableCell>
-                <TableSortLabel
-                  active={sortField === 'default_contact_name'}
-                  direction={sortField === 'default_contact_name' ? sortOrder : 'asc'}
-                  onClick={() => handleSort('default_contact_name')}
-                >
-                  担当者
-                </TableSortLabel>
-              </TableCell>
-              <TableCell>
-                <TableSortLabel
-                  active={sortField === 'payment_method'}
-                  direction={sortField === 'payment_method' ? sortOrder : 'asc'}
-                  onClick={() => handleSort('payment_method')}
-                >
-                  支払方法
+                  初回契約開始日
                 </TableSortLabel>
               </TableCell>
               <TableCell align="center">操作</TableCell>
@@ -320,15 +326,13 @@ export const ClientList = () => {
           <TableBody>
             {sortedClients.map((client) => (
               <TableRow key={client.id}>
-                <TableCell>{client.name}</TableCell>
-                <TableCell>{client.department}</TableCell>
                 <TableCell>
-                  <Typography variant="body2">{client.default_contact_name}</Typography>
-                  <Typography variant="caption" color="textSecondary">
-                    {client.default_contact_email}
-                  </Typography>
+                  {client.name}
+                  {client.department && `（${client.department}）`}
                 </TableCell>
-                <TableCell>{client.payment_method}</TableCell>
+                <TableCell>
+                  {formatDate(client.first_contract_date)}
+                </TableCell>
                 <TableCell align="center">
                   <Tooltip title="編集">
                     <IconButton onClick={() => handleOpenDialog(client)} size="small">
@@ -396,7 +400,14 @@ export const ClientList = () => {
               value={formData.payment_method}
               onChange={handleInputChange}
               fullWidth
-            />
+              select
+              SelectProps={{
+                native: true,
+              }}
+            >
+              <option value="請求書払い">請求書払い</option>
+              <option value="Stripe">Stripe</option>
+            </TextField>
           </Stack>
         </DialogContent>
         <DialogActions>

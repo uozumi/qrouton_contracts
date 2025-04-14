@@ -24,7 +24,7 @@ import {
 } from '@mui/material';
 import { Edit as EditIcon } from '@mui/icons-material';
 import { supabase } from '../lib/supabase';
-import { format } from 'date-fns';
+import { formatDate } from '../utils/dateFormat';
 import { ja } from 'date-fns/locale';
 
 interface Contract {
@@ -95,7 +95,7 @@ export const ContractActiveList = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [formData, setFormData] = useState<ContractFormData>(initialFormData);
-  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [includeDomainOption, setIncludeDomainOption] = useState(false);
   const [sortField, setSortField] = useState<SortField>('client.name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -438,8 +438,7 @@ export const ContractActiveList = () => {
                   <TableCell>{contract.plan?.name}</TableCell>
                   <TableCell align="right">¥{Math.round((contract.price || 0) / 12).toLocaleString()}</TableCell>
                   <TableCell>
-                    {format(new Date(contract.start_date), 'yyyy年M月d日', { locale: ja })} 〜{' '}
-                    {format(new Date(contract.end_date), 'yyyy年M月d日', { locale: ja })}
+                    {formatDate(contract.start_date)} 〜 {formatDate(contract.end_date)}
                   </TableCell>
                   <TableCell>{contract.payment_method}</TableCell>
                   <TableCell align="center">
@@ -505,21 +504,25 @@ export const ContractActiveList = () => {
               />
               <TextField
                 name="start_date"
-                label="開始日"
+                label="契約開始日"
                 type="date"
                 value={formData.start_date}
                 onChange={handleInputChange}
                 fullWidth
-                InputLabelProps={{ shrink: true }}
+                InputLabelProps={{
+                  shrink: true,
+                }}
               />
               <TextField
                 name="end_date"
-                label="終了日"
+                label="契約終了日"
                 type="date"
                 value={formData.end_date}
                 onChange={handleInputChange}
                 fullWidth
-                InputLabelProps={{ shrink: true }}
+                InputLabelProps={{
+                  shrink: true,
+                }}
               />
               <TextField
                 name="contact_name"

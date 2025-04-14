@@ -30,8 +30,7 @@ import {
 } from '@mui/material';
 import { Edit as EditIcon, Add as AddIcon, FilterList as FilterListIcon } from '@mui/icons-material';
 import { supabase } from '../lib/supabase';
-import { format } from 'date-fns';
-import { ja } from 'date-fns/locale';
+import { formatDate } from '../utils/dateFormat';
 
 interface Contract {
   id: string;
@@ -474,8 +473,7 @@ export const ContractList = () => {
                 <TableCell>{contract.plan?.name}</TableCell>
                 <TableCell align="right">¥{Math.round((contract.price || 0) / 12).toLocaleString()}</TableCell>
                 <TableCell>
-                  {format(new Date(contract.start_date), 'yyyy年M月d日', { locale: ja })} 〜{' '}
-                  {format(new Date(contract.end_date), 'yyyy年M月d日', { locale: ja })}
+                  {formatDate(contract.start_date)} 〜 {formatDate(contract.end_date)}
                 </TableCell>
                 <TableCell>
                   <Typography
@@ -551,25 +549,25 @@ export const ContractList = () => {
             />
             <TextField
               name="start_date"
-              label="開始日"
+              label="契約開始日"
               type="date"
               value={formData.start_date}
               onChange={handleInputChange}
               fullWidth
-              required
-              disabled={!isFieldEditable('start_date')}
-              InputLabelProps={{ shrink: true }}
+              InputLabelProps={{
+                shrink: true,
+              }}
             />
             <TextField
               name="end_date"
-              label="終了日"
+              label="契約終了日"
               type="date"
               value={formData.end_date}
               onChange={handleInputChange}
               fullWidth
-              required
-              disabled={!isFieldEditable('end_date')}
-              InputLabelProps={{ shrink: true }}
+              InputLabelProps={{
+                shrink: true,
+              }}
             />
             <FormControlLabel
               control={
