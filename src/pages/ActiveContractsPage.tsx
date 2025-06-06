@@ -25,6 +25,7 @@ import {
 import { Edit as EditIcon } from '@mui/icons-material';
 import { supabase } from '../lib/supabase';
 import { formatDate } from '../utils/dateFormat';
+import { formatClientName } from '../utils/clientFormat';
 import { ja } from 'date-fns/locale';
 
 interface Contract {
@@ -51,6 +52,7 @@ interface Contract {
 interface Client {
   id: string;
   name: string;
+  department: string;
 }
 
 interface Plan {
@@ -84,10 +86,10 @@ const initialFormData: ContractFormData = {
   payment_method: '',
 };
 
-type SortField = 'client.name' | 'client.department' | 'plan.name' | 'price' | 'start_date' | 'payment_method';
+type SortField = 'client.name' | 'plan.name' | 'price' | 'start_date' | 'payment_method';
 type SortOrder = 'asc' | 'desc';
 
-export const ContractActiveList = () => {
+export const ActiveContractsPage = () => {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -113,7 +115,7 @@ export const ContractActiveList = () => {
     try {
       const { data, error } = await supabase
         .from('clients')
-        .select('*')
+        .select('id, name, department')
         .order('name');
 
       if (error) throw error;
@@ -285,8 +287,6 @@ export const ContractActiveList = () => {
     switch (sortField) {
       case 'client.name':
         return multiplier * ((a.client?.name || '').localeCompare(b.client?.name || ''));
-      case 'client.department':
-        return multiplier * ((a.client?.department || '').localeCompare(b.client?.department || ''));
       case 'plan.name':
         return multiplier * ((a.plan?.name || '').localeCompare(b.plan?.name || ''));
       case 'price':
@@ -384,15 +384,6 @@ export const ContractActiveList = () => {
                 </TableCell>
                 <TableCell>
                   <TableSortLabel
-                    active={sortField === 'client.department'}
-                    direction={sortField === 'client.department' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('client.department')}
-                  >
-                    部署
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel
                     active={sortField === 'plan.name'}
                     direction={sortField === 'plan.name' ? sortOrder : 'asc'}
                     onClick={() => handleSort('plan.name')}
@@ -433,8 +424,9 @@ export const ContractActiveList = () => {
             <TableBody>
               {sortedContracts.map((contract) => (
                 <TableRow key={contract.id}>
-                  <TableCell>{contract.client?.name}</TableCell>
-                  <TableCell>{contract.client?.department}</TableCell>
+                  <TableCell>
+                    {formatClientName(contract.client)}
+                  </TableCell>
                   <TableCell>{contract.plan?.name}</TableCell>
                   <TableCell align="right">¥{Math.round((contract.price || 0) / 12).toLocaleString()}</TableCell>
                   <TableCell>
@@ -473,7 +465,7 @@ export const ContractActiveList = () => {
               >
                 {clients.map((client) => (
                   <option key={client.id} value={client.id}>
-                    {client.name}
+                    {formatClientName(client)}
                   </option>
                 ))}
               </TextField>

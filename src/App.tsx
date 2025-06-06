@@ -2,11 +2,11 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { theme } from './theme';
 import { Layout } from './components/Layout';
-import { ClientList } from './components/ClientList';
-import { ContractList } from './components/ContractList';
-import { DomainOptionList } from './components/DomainOptionList';
-import { PlanList } from './components/PlanList';
-import { ContractActiveList } from './components/ContractActiveList';
+import { ClientsPage } from './pages/ClientsPage';
+import { ContractsPage } from './pages/ContractsPage';
+import { DomainOptionsPage } from './pages/DomainOptionsPage';
+import { PlansPage } from './pages/PlansPage';
+import { ActiveContractsPage } from './pages/ActiveContractsPage';
 
 function App() {
   return (
@@ -15,12 +15,12 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<Layout />}>
-            <Route index element={<ContractList />} />
-            <Route path="clients" element={<ClientList />} />
-            <Route path="contracts" element={<ContractList />} />
-            <Route path="contracts/active" element={<ContractActiveList />} />
-            <Route path="domain-options" element={<DomainOptionList />} />
-            <Route path="plans" element={<PlanList />} />
+            <Route index element={<ContractsPage />} />
+            <Route path="clients" element={<ClientsPage />} />
+            <Route path="contracts" element={<ContractsPage />} />
+            <Route path="contracts/active" element={<ActiveContractsPage />} />
+            <Route path="domain-options" element={<DomainOptionsPage />} />
+            <Route path="plans" element={<PlansPage />} />
           </Route>
         </Routes>
       </Router>

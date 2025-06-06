@@ -50,7 +50,7 @@ interface SupabaseResponse {
   status: string;
 }
 
-export const DomainOptionList = () => {
+export const DomainOptionsPage = () => {
   console.log('DomainOptionList コンポーネントがレンダリングされました');
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);

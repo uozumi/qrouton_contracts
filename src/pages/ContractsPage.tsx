@@ -31,12 +31,15 @@ import {
 import { Edit as EditIcon, Add as AddIcon, FilterList as FilterListIcon } from '@mui/icons-material';
 import { supabase } from '../lib/supabase';
 import { formatDate } from '../utils/dateFormat';
+import { formatClientName } from '../utils/clientFormat';
+import { ContractModal } from '../components/modals/ContractModal';
 
 interface Contract {
   id: string;
   client: {
     id: string;
     name: string;
+    department: string;
   };
   plan: {
     id: string;
@@ -67,11 +70,15 @@ interface ContractFormData {
 interface Client {
   id: string;
   name: string;
+  department: string;
 }
 
 interface Plan {
   id: string;
   name: string;
+  price_monthly: number;
+  price_yearly: number;
+  duration_months: number;
 }
 
 type SortField = 'client.name' | 'plan.name' | 'price' | 'start_date' | 'status';
@@ -84,18 +91,6 @@ interface FilterData {
   startDateFrom: string;
   startDateTo: string;
 }
-
-const initialFormData: ContractFormData = {
-  client_id: '',
-  plan_id: '',
-  price: 0,
-  start_date: '',
-  end_date: '',
-  auto_renew: false,
-  status: 'pending',
-  contact_name: '',
-  contact_email: '',
-};
 
 const statusOptions = [
   { value: 'active', label: '有効' },
@@ -111,18 +106,18 @@ const initialFilterData: FilterData = {
   startDateTo: '',
 };
 
-export const ContractList = () => {
+export const ContractsPage = () => {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
-  const [formData, setFormData] = useState<ContractFormData>(initialFormData);
   const [sortField, setSortField] = useState<SortField>('start_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [showFilters, setShowFilters] = useState(false);
   const [filterData, setFilterData] = useState<FilterData>(initialFilterData);
+  const [filterKeyword, setFilterKeyword] = useState('');
 
   useEffect(() => {
     fetchClients();
@@ -137,7 +132,7 @@ export const ContractList = () => {
     try {
       const { data, error } = await supabase
         .from('clients')
-        .select('*')
+        .select('id, name, department')
         .order('name');
 
       if (error) throw error;
@@ -168,9 +163,12 @@ export const ContractList = () => {
         .select(`
           *,
           client:clients (
-            name
+            id,
+            name,
+            department
           ),
           plan:plans (
+            id,
             name
           )
         `)
@@ -186,52 +184,37 @@ export const ContractList = () => {
   };
 
   const handleOpenDialog = (contract?: Contract) => {
-    if (contract) {
-      setEditingContract(contract);
-      setFormData({
-        client_id: contract.client.id || '',
-        plan_id: contract.plan.id || '',
-        price: contract.price || 0,
-        start_date: contract.start_date || '',
-        end_date: contract.end_date || '',
-        auto_renew: contract.auto_renew || false,
-        status: contract.status || 'pending',
-        contact_name: contract.contact_name || '',
-        contact_email: contract.contact_email || '',
-      });
-    } else {
-      setEditingContract(null);
-      setFormData(initialFormData);
-    }
+    setEditingContract(contract || null);
     setOpenDialog(true);
   };
 
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setEditingContract(null);
-    setFormData(initialFormData);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const handleSubmit = async () => {
+  const handleSubmit = async (formData: ContractFormData) => {
     try {
+      if (!formData.client_id || !formData.plan_id) {
+        console.error('クライアントとプランは必須です');
+        return;
+      }
+
+      const submitData = {
+        ...formData,
+        price: Number(formData.price)
+      };
+
       if (editingContract) {
         const { error } = await supabase
           .from('contracts')
-          .update(formData)
+          .update(submitData)
           .eq('id', editingContract.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('contracts')
-          .insert([formData]);
+          .insert([submitData]);
         if (error) throw error;
       }
       
@@ -280,7 +263,24 @@ export const ContractList = () => {
     setFilterData(initialFilterData);
   };
 
-  const sortedContracts = [...contracts].sort((a, b) => {
+  const handleFilterKeywordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilterKeyword(e.target.value);
+  };
+
+  const keywordFilteredContracts = contracts.filter(contract => {
+    if (!filterKeyword) return true;
+    
+    const keyword = filterKeyword.toLowerCase();
+    return (
+      (contract.client?.name && contract.client.name.toLowerCase().includes(keyword)) ||
+      (contract.client?.department && contract.client.department.toLowerCase().includes(keyword)) ||
+      (contract.plan?.name && contract.plan.name.toLowerCase().includes(keyword)) ||
+      (contract.contact_name && contract.contact_name.toLowerCase().includes(keyword)) ||
+      (contract.contact_email && contract.contact_email.toLowerCase().includes(keyword))
+    );
+  });
+
+  const sortedContracts = [...keywordFilteredContracts].sort((a, b) => {
     const multiplier = sortOrder === 'asc' ? 1 : -1;
     
     switch (sortField) {
@@ -298,6 +298,13 @@ export const ContractList = () => {
         return 0;
     }
   });
+
+  const isContractActive = (startDate: string, endDate: string): boolean => {
+    const now = new Date();
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    return start <= now && now <= end;
+  };
 
   if (loading) {
     return <Typography>読み込み中...</Typography>;
@@ -317,20 +324,30 @@ export const ContractList = () => {
       </Stack>
 
       <Paper sx={{ p: 2, mb: 2 }}>
-        <Stack direction="row" spacing={4}>
-          <Box>
-            <Typography variant="subtitle2" color="text.secondary">表示件数</Typography>
-            <Typography variant="h6">{contracts.length}件</Typography>
-          </Box>
-          <Box>
-            <Typography variant="subtitle2" color="text.secondary">合計金額（月額）</Typography>
-            <Typography variant="h6">
-              ¥{Math.round(contracts
-                .filter(contract => contract.plan?.name !== '独自ドメインオプション利用料')
-                .reduce((sum, contract) => sum + (contract.price || 0), 0) / 12)
-                .toLocaleString()}
-            </Typography>
-          </Box>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <TextField
+            label="キーワード検索"
+            value={filterKeyword}
+            onChange={handleFilterKeywordChange}
+            placeholder="クライアント、プラン、担当者で検索"
+            size="small"
+            sx={{ minWidth: 300 }}
+          />
+          <Stack direction="row" spacing={4}>
+            <Box>
+              <Typography variant="subtitle2" color="text.secondary">表示件数</Typography>
+              <Typography variant="h6">{sortedContracts.length}件</Typography>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" color="text.secondary">合計金額（月額）</Typography>
+              <Typography variant="h6">
+                ¥{Math.round(sortedContracts
+                  .filter(contract => contract.plan?.name !== '独自ドメインオプション利用料')
+                  .reduce((sum, contract) => sum + (contract.price || 0), 0) / 12)
+                  .toLocaleString()}
+              </Typography>
+            </Box>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -349,7 +366,7 @@ export const ContractList = () => {
                 <MenuItem value="">全て</MenuItem>
                 {clients.map((client) => (
                   <MenuItem key={client.id} value={client.id}>
-                    {client.name}
+                    {formatClientName(client)}
                   </MenuItem>
                 ))}
               </TextField>
@@ -469,7 +486,9 @@ export const ContractList = () => {
           <TableBody>
             {sortedContracts.map((contract) => (
               <TableRow key={contract.id}>
-                <TableCell>{contract.client?.name}</TableCell>
+                <TableCell>
+                  {formatClientName(contract.client)}
+                </TableCell>
                 <TableCell>{contract.plan?.name}</TableCell>
                 <TableCell align="right">¥{Math.round((contract.price || 0) / 12).toLocaleString()}</TableCell>
                 <TableCell>
@@ -479,11 +498,11 @@ export const ContractList = () => {
                   <Typography
                     variant="body2"
                     sx={{
-                      color: contract.status === 'active' ? 'success.main' : 'error.main',
+                      color: isContractActive(contract.start_date, contract.end_date) ? 'success.main' : 'error.main',
                       fontWeight: 'bold'
                     }}
                   >
-                    {contract.status === 'active' ? '有効' : '無効'}
+                    {isContractActive(contract.start_date, contract.end_date) ? '契約中' : '終了'}
                   </Typography>
                 </TableCell>
                 <TableCell>{contract.payment_method}</TableCell>
@@ -500,124 +519,15 @@ export const ContractList = () => {
         </Table>
       </TableContainer>
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingContract ? '契約情報の編集' : '新規契約登録'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField
-              select
-              name="client_id"
-              label="クライアント"
-              value={formData.client_id}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              disabled={!isFieldEditable('client_id')}
-            >
-              {clients.map((client) => (
-                <MenuItem key={client.id} value={client.id}>
-                  {client.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              select
-              name="plan_id"
-              label="プラン"
-              value={formData.plan_id}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              disabled={!isFieldEditable('plan_id')}
-            >
-              {plans.map((plan) => (
-                <MenuItem key={plan.id} value={plan.id}>
-                  {plan.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              name="price"
-              label="金額"
-              type="number"
-              value={formData.price}
-              onChange={handleInputChange}
-              fullWidth
-              required
-            />
-            <TextField
-              name="start_date"
-              label="契約開始日"
-              type="date"
-              value={formData.start_date}
-              onChange={handleInputChange}
-              fullWidth
-              InputLabelProps={{
-                shrink: true,
-              }}
-            />
-            <TextField
-              name="end_date"
-              label="契約終了日"
-              type="date"
-              value={formData.end_date}
-              onChange={handleInputChange}
-              fullWidth
-              InputLabelProps={{
-                shrink: true,
-              }}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  name="auto_renew"
-                  checked={formData.auto_renew}
-                  onChange={handleInputChange}
-                />
-              }
-              label="自動更新"
-            />
-            <TextField
-              select
-              name="status"
-              label="ステータス"
-              value={formData.status}
-              onChange={handleInputChange}
-              fullWidth
-              required
-            >
-              {statusOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              name="contact_name"
-              label="担当者名"
-              value={formData.contact_name}
-              onChange={handleInputChange}
-              fullWidth
-            />
-            <TextField
-              name="contact_email"
-              label="担当者メールアドレス"
-              type="email"
-              value={formData.contact_email}
-              onChange={handleInputChange}
-              fullWidth
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>キャンセル</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {editingContract ? '更新' : '登録'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ContractModal
+        open={openDialog}
+        onClose={handleCloseDialog}
+        onSubmit={handleSubmit}
+        editingContract={editingContract}
+        clients={clients}
+        plans={plans}
+        isFieldEditable={isFieldEditable}
+      />
     </Box>
   );
 }; 
