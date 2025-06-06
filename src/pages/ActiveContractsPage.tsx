@@ -1,12 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
   Paper,
   Table,
   TableBody,
@@ -18,222 +12,103 @@ import {
   TextField,
   Typography,
   Stack,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  IconButton,
   Tooltip,
   FormControlLabel,
-  Checkbox
+  Checkbox,
 } from '@mui/material';
 import { Edit as EditIcon } from '@mui/icons-material';
-import { supabase } from '../lib/supabase';
-import { formatDate } from '../utils/dateFormat';
+import { formatContractPeriod } from '../utils/dateFormat';
 import { formatClientName } from '../utils/clientFormat';
-import { ja } from 'date-fns/locale';
+import { formatPlanWithPrice } from '../utils/planFormat';
+import { ContractModal } from '../components/modals/ContractModal';
+import {
+  Contract,
+  ContractFormData,
+  SimpleClient,
+  Plan,
+  SortOrder
+} from '../types';
+import { useContracts } from '../hooks/useContracts';
+import { useClients } from '../hooks/useClients';
+import { usePlans } from '../hooks/usePlans';
 
-interface Contract {
-  id: string;
-  client: {
-    id: string;
-    name: string;
-    department: string;
-  };
-  plan: {
-    id: string;
-    name: string;
-  };
-  price: number;
-  start_date: string;
-  end_date: string;
-  auto_renew: boolean;
-  status: string;
-  contact_name: string;
-  contact_email: string;
-  payment_method: string;
-}
-
-interface Client {
-  id: string;
-  name: string;
-  department: string;
-}
-
-interface Plan {
-  id: string;
-  name: string;
-}
-
-interface ContractFormData {
-  client_id: string;
-  plan_id: string;
-  price: number;
-  start_date: string;
-  end_date: string;
-  auto_renew: boolean;
-  status: string;
-  contact_name: string;
-  contact_email: string;
-  payment_method: string;
-}
-
-const initialFormData: ContractFormData = {
-  client_id: '',
-  plan_id: '',
-  price: 0,
-  start_date: '',
-  end_date: '',
-  auto_renew: true,
-  status: 'active',
-  contact_name: '',
-  contact_email: '',
-  payment_method: '',
-};
-
-type SortField = 'client.name' | 'plan.name' | 'price' | 'start_date' | 'payment_method';
-type SortOrder = 'asc' | 'desc';
+type SortField = 'client.name' | 'plan.name' | 'start_date';
 
 export const ActiveContractsPage = () => {
-  const [contracts, setContracts] = useState<Contract[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
+  const currentDate = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(
+    `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+  );
   const [openDialog, setOpenDialog] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
-  const [formData, setFormData] = useState<ContractFormData>(initialFormData);
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
-  const [includeDomainOption, setIncludeDomainOption] = useState(false);
+  const [simpleClients, setSimpleClients] = useState<SimpleClient[]>([]);
+  const [includeDomainOption, setIncludeDomainOption] = useState(true);
   const [sortField, setSortField] = useState<SortField>('client.name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
-  useEffect(() => {
-    fetchClients();
-    fetchPlans();
-  }, []);
+  const { contracts, loading, fetchActiveContracts, updateContract } = useContracts();
+  const { fetchSimpleClients } = useClients();
+  const { plans, fetchPlans } = usePlans();
 
   useEffect(() => {
-    fetchContracts();
+    fetchActiveContracts(selectedMonth);
   }, [selectedMonth]);
 
-  const fetchClients = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('id, name, department')
-        .order('name');
+  useEffect(() => {
+    const loadSimpleClients = async () => {
+      const data = await fetchSimpleClients();
+      setSimpleClients(data);
+    };
+    loadSimpleClients();
+  }, [fetchSimpleClients]);
 
-      if (error) throw error;
-      setClients(data || []);
-    } catch (error) {
-      console.error('クライアント情報の取得に失敗しました:', error);
-    }
-  };
+  useEffect(() => {
+    fetchPlans();
+  }, [fetchPlans]);
 
-  const fetchPlans = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('plans')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setPlans(data || []);
-    } catch (error) {
-      console.error('プラン情報の取得に失敗しました:', error);
-    }
-  };
-
-  const fetchContracts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('contracts')
-        .select(`
-          *,
-          client:clients (
-            name,
-            department
-          ),
-          plan:plans (
-            name
-          )
-        `)
-        .order('start_date');
-
-      if (error) throw error;
-
-      // 選択された月の時点で有効な契約のみをフィルタリング
-      const filteredContracts = (data || []).filter(contract => {
-        const selectedDate = new Date(selectedMonth);
-        const startDate = new Date(contract.start_date);
-        const endDate = new Date(contract.end_date);
-
-        // 選択された月の最初の日と最後の日を取得
-        const firstDayOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-        const lastDayOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
-
-        // 選択された月の期間内に契約が有効だったかどうかを判定
-        return startDate <= lastDayOfMonth && endDate >= firstDayOfMonth;
-      });
-
-      setContracts(filteredContracts);
-    } catch (error) {
-      console.error('契約情報の取得に失敗しました:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMonthChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedMonth(event.target.value);
-  };
-
-  const handleOpenDialog = (contract?: Contract) => {
-    if (contract) {
-      setEditingContract(contract);
-      setFormData({
-        client_id: contract.client.id,
-        plan_id: contract.plan.id,
-        price: contract.price,
-        start_date: contract.start_date,
-        end_date: contract.end_date,
-        auto_renew: contract.auto_renew,
-        status: contract.status,
-        contact_name: contract.contact_name,
-        contact_email: contract.contact_email,
-        payment_method: contract.payment_method
-      });
-    } else {
-      setEditingContract(null);
-      setFormData(initialFormData);
-    }
+  const handleOpenDialog = (contract: Contract) => {
+    setEditingContract(contract);
     setOpenDialog(true);
   };
 
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setEditingContract(null);
-    setFormData(initialFormData);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'number' ? Number(value) : value
-    }));
-  };
-
-  const handleSubmit = async () => {
+  const handleSubmit = async (formData: ContractFormData) => {
     try {
       if (editingContract) {
-        const { error } = await supabase
-          .from('contracts')
-          .update(formData)
-          .eq('id', editingContract.id);
-        if (error) throw error;
+        await updateContract(editingContract.id, formData);
+        await fetchActiveContracts(selectedMonth);
       }
-      
       handleCloseDialog();
-      fetchContracts();
     } catch (error) {
-      console.error('契約情報の保存に失敗しました:', error);
+      // エラーハンドリングは各hookで実施済み
     }
+  };
+
+  const handleMonthChange = (event: any) => {
+    setSelectedMonth(event.target.value);
+  };
+
+  const generateMonthOptions = () => {
+    const options = [];
+    const currentDate = new Date();
+    
+    for (let i = -6; i <= 6; i++) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const label = `${date.getFullYear()}年${date.getMonth() + 1}月`;
+      options.push({ value, label });
+    }
+    
+    return options;
   };
 
   const calculateTotalAmount = (contracts: Contract[]) => {
@@ -281,6 +156,16 @@ export const ActiveContractsPage = () => {
     }
   };
 
+  // 契約終了月が選択月と同じかどうかを判定
+  const isContractEndingInSelectedMonth = (endDate: string) => {
+    const [selectedYear, selectedMonthNum] = selectedMonth.split('-').map(Number);
+    const contractEndDate = new Date(endDate);
+    const contractEndYear = contractEndDate.getFullYear();
+    const contractEndMonth = contractEndDate.getMonth() + 1; // 0ベースなので+1
+    
+    return selectedYear === contractEndYear && selectedMonthNum === contractEndMonth;
+  };
+
   const sortedContracts = [...filteredContracts].sort((a, b) => {
     const multiplier = sortOrder === 'asc' ? 1 : -1;
     
@@ -289,12 +174,8 @@ export const ActiveContractsPage = () => {
         return multiplier * ((a.client?.name || '').localeCompare(b.client?.name || ''));
       case 'plan.name':
         return multiplier * ((a.plan?.name || '').localeCompare(b.plan?.name || ''));
-      case 'price':
-        return multiplier * ((a.price || 0) - (b.price || 0));
       case 'start_date':
         return multiplier * (new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
-      case 'payment_method':
-        return multiplier * ((a.payment_method || '').localeCompare(b.payment_method || ''));
       default:
         return 0;
     }
@@ -305,248 +186,166 @@ export const ActiveContractsPage = () => {
   }
 
   return (
-    <Box sx={{ width: '100%', minHeight: '100vh', bgcolor: 'background.default' }}>
-      <Box sx={{ p: 3, width: '100%' }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
-          <Typography variant="h5">契約中一覧</Typography>
-        </Stack>
-        <Paper sx={{ p: 2, mb: 2, width: '100%' }}>
-          <Stack spacing={3}>
-            <Stack direction="row" spacing={4} alignItems="center">
-              <Box>
-                <TextField
-                  type="month"
-                  label="表示月"
-                  value={selectedMonth}
-                  onChange={handleMonthChange}
-                  InputLabelProps={{ shrink: true }}
-                  size="small"
-                />
-              </Box>
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary">契約中件数</Typography>
-                <Typography variant="h6">{filteredContracts.length}件</Typography>
-              </Box>
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary">合計金額（月額）</Typography>
-                <Typography variant="h6">
-                  ¥{Math.round(calculateTotalAmount(contracts) / 12).toLocaleString()}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={includeDomainOption}
-                      onChange={(e) => setIncludeDomainOption(e.target.checked)}
-                    />
-                  }
-                  label="独自ドメインオプション"
-                />
-              </Box>
-            </Stack>
+    <Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
+        <Typography variant="h5">有効契約一覧</Typography>
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel>対象月</InputLabel>
+          <Select
+            value={selectedMonth}
+            label="対象月"
+            onChange={handleMonthChange}
+          >
+            {generateMonthOptions().map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Stack>
+
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Stack spacing={3}>
+          <Stack direction="row" spacing={4} alignItems="center">
             <Box>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>プラン別契約件数</Typography>
-              <TableContainer component={Paper} sx={{ maxWidth: 500 }}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>プラン名</TableCell>
-                      <TableCell align="right">件数</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {calculatePlanCounts(filteredContracts).map(({ planName, count }) => (
-                      <TableRow key={planName}>
-                        <TableCell>{planName}</TableCell>
-                        <TableCell align="right">{count}件</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              <Typography variant="subtitle2" color="text.secondary">契約中件数</Typography>
+              <Typography variant="h6">{filteredContracts.length}件</Typography>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" color="text.secondary">合計金額（月額）</Typography>
+              <Typography variant="h6">
+                ¥{Math.round(calculateTotalAmount(contracts) / 12).toLocaleString()}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={includeDomainOption}
+                    onChange={(e) => setIncludeDomainOption(e.target.checked)}
+                  />
+                }
+                label="独自ドメインオプション"
+              />
             </Box>
           </Stack>
-        </Paper>
+          <Box>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>プラン別契約件数</Typography>
+            <TableContainer component={Paper} sx={{ maxWidth: 500 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>プラン名</TableCell>
+                    <TableCell align="right">件数</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {calculatePlanCounts(filteredContracts).map(({ planName, count }) => (
+                    <TableRow key={planName}>
+                      <TableCell>{planName}</TableCell>
+                      <TableCell align="right">{count}件</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+        </Stack>
+      </Paper>
 
-        <TableContainer component={Paper} sx={{ width: '100%' }}>
-          <Table>
-            <TableHead>
-              <TableRow>
+      <TableContainer component={Paper} sx={{ minWidth: 800 }}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>
+                <TableSortLabel
+                  active={sortField === 'client.name'}
+                  direction={sortField === 'client.name' ? sortOrder : 'asc'}
+                  onClick={() => handleSort('client.name')}
+                >
+                  クライアント
+                </TableSortLabel>
+              </TableCell>
+              <TableCell>
+                <TableSortLabel
+                  active={sortField === 'plan.name'}
+                  direction={sortField === 'plan.name' ? sortOrder : 'asc'}
+                  onClick={() => handleSort('plan.name')}
+                >
+                  プラン・料金
+                </TableSortLabel>
+              </TableCell>
+              <TableCell>
+                <TableSortLabel
+                  active={sortField === 'start_date'}
+                  direction={sortField === 'start_date' ? sortOrder : 'asc'}
+                  onClick={() => handleSort('start_date')}
+                >
+                  契約期間
+                </TableSortLabel>
+              </TableCell>
+              <TableCell align="center">操作</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {sortedContracts.map((contract) => (
+              <TableRow 
+                key={contract.id}
+                sx={{
+                  ...(isContractEndingInSelectedMonth(contract.end_date) && {
+                    backgroundColor: 'error.light',
+                    '&:hover': {
+                      backgroundColor: 'error.main',
+                    }
+                  }),
+                  ...(!isContractEndingInSelectedMonth(contract.end_date) && {
+                    '&:hover': {
+                      backgroundColor: 'action.hover',
+                      '& .edit-button': {
+                        opacity: 1,
+                      }
+                    }
+                  }),
+                  '& .edit-button': {
+                    opacity: isContractEndingInSelectedMonth(contract.end_date) ? 1 : 0,
+                    transition: 'opacity 0.2s ease-in-out',
+                  }
+                }}
+              >
                 <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'client.name'}
-                    direction={sortField === 'client.name' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('client.name')}
-                  >
-                    クライアント
-                  </TableSortLabel>
+                  {contract.client && formatClientName(contract.client)}
                 </TableCell>
                 <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'plan.name'}
-                    direction={sortField === 'plan.name' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('plan.name')}
-                  >
-                    プラン
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell align="right">
-                  <TableSortLabel
-                    active={sortField === 'price'}
-                    direction={sortField === 'price' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('price')}
-                  >
-                    料金（月額）
-                  </TableSortLabel>
+                  {formatPlanWithPrice({ 
+                    name: contract.plan?.name || '', 
+                    price: contract.price 
+                  })}
                 </TableCell>
                 <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'start_date'}
-                    direction={sortField === 'start_date' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('start_date')}
-                  >
-                    契約期間
-                  </TableSortLabel>
+                  {formatContractPeriod(contract.start_date, contract.end_date)}
                 </TableCell>
-                <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'payment_method'}
-                    direction={sortField === 'payment_method' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('payment_method')}
-                  >
-                    支払方法
-                  </TableSortLabel>
+                <TableCell align="center">
+                  <Tooltip title="編集">
+                    <IconButton onClick={() => handleOpenDialog(contract)} size="small" className="edit-button">
+                      <EditIcon />
+                    </IconButton>
+                  </Tooltip>
                 </TableCell>
-                <TableCell align="center">操作</TableCell>
               </TableRow>
-            </TableHead>
-            <TableBody>
-              {sortedContracts.map((contract) => (
-                <TableRow key={contract.id}>
-                  <TableCell>
-                    {formatClientName(contract.client)}
-                  </TableCell>
-                  <TableCell>{contract.plan?.name}</TableCell>
-                  <TableCell align="right">¥{Math.round((contract.price || 0) / 12).toLocaleString()}</TableCell>
-                  <TableCell>
-                    {formatDate(contract.start_date)} 〜 {formatDate(contract.end_date)}
-                  </TableCell>
-                  <TableCell>{contract.payment_method}</TableCell>
-                  <TableCell align="center">
-                    <Tooltip title="編集">
-                      <IconButton onClick={() => handleOpenDialog(contract)} size="small">
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
-        <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-          <DialogTitle>
-            {editingContract ? '契約編集' : '新規契約'}
-          </DialogTitle>
-          <DialogContent>
-            <Stack spacing={2} sx={{ mt: 2 }}>
-              <TextField
-                name="client_id"
-                label="クライアント"
-                value={formData.client_id}
-                onChange={handleInputChange}
-                fullWidth
-                select
-                SelectProps={{
-                  native: true
-                }}
-              >
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {formatClientName(client)}
-                  </option>
-                ))}
-              </TextField>
-              <TextField
-                name="plan_id"
-                label="プラン"
-                value={formData.plan_id}
-                onChange={handleInputChange}
-                fullWidth
-                select
-                SelectProps={{
-                  native: true
-                }}
-              >
-                {plans.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.name}
-                  </option>
-                ))}
-              </TextField>
-              <TextField
-                name="price"
-                label="料金（年額）"
-                type="number"
-                value={formData.price}
-                onChange={handleInputChange}
-                fullWidth
-              />
-              <TextField
-                name="start_date"
-                label="契約開始日"
-                type="date"
-                value={formData.start_date}
-                onChange={handleInputChange}
-                fullWidth
-                InputLabelProps={{
-                  shrink: true,
-                }}
-              />
-              <TextField
-                name="end_date"
-                label="契約終了日"
-                type="date"
-                value={formData.end_date}
-                onChange={handleInputChange}
-                fullWidth
-                InputLabelProps={{
-                  shrink: true,
-                }}
-              />
-              <TextField
-                name="contact_name"
-                label="担当者名"
-                value={formData.contact_name}
-                onChange={handleInputChange}
-                fullWidth
-              />
-              <TextField
-                name="contact_email"
-                label="担当者メール"
-                value={formData.contact_email}
-                onChange={handleInputChange}
-                fullWidth
-              />
-              <TextField
-                name="payment_method"
-                label="支払方法"
-                value={formData.payment_method}
-                onChange={handleInputChange}
-                fullWidth
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseDialog}>キャンセル</Button>
-            <Button onClick={handleSubmit} variant="contained">
-              {editingContract ? '更新' : '作成'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
+      <ContractModal
+        open={openDialog}
+        onClose={handleCloseDialog}
+        onSubmit={handleSubmit}
+        editingContract={editingContract}
+        clients={simpleClients}
+        plans={plans}
+      />
     </Box>
   );
 }; 

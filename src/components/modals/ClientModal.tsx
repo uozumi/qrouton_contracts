@@ -9,28 +9,13 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-
-interface Client {
-  id: string;
-  name: string;
-  legal_type: string;
-  legal_position: string;
-  department: string;
-  default_contact_name: string;
-  default_contact_email: string;
-  payment_method: string;
-  first_contract_date: string | null;
-}
-
-interface ClientFormData {
-  name: string;
-  legal_type: string;
-  legal_position: string;
-  department: string;
-  default_contact_name: string;
-  default_contact_email: string;
-  payment_method: string;
-}
+import {
+  Client,
+  ClientFormData,
+  legalTypeOptions,
+  legalPositionOptions,
+  paymentMethodOptions
+} from '../../types';
 
 const initialFormData: ClientFormData = {
   name: '',
@@ -119,13 +104,11 @@ export const ClientModal: React.FC<ClientModalProps> = ({
               }}
             >
               <option value="">選択してください</option>
-              <option value="株式会社">株式会社</option>
-              <option value="有限会社">有限会社</option>
-              <option value="合同会社">合同会社</option>
-              <option value="合資会社">合資会社</option>
-              <option value="合名会社">合名会社</option>
-              <option value="個人事業主">個人事業主</option>
-              <option value="その他">その他</option>
+              {legalTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </TextField>
             <TextField
               name="legal_position"
@@ -140,9 +123,11 @@ export const ClientModal: React.FC<ClientModalProps> = ({
               required
             >
               <option value="">選択してください</option>
-              <option value="前株">前株</option>
-              <option value="後株">後株</option>
-              <option value="該当なし">該当なし</option>
+              {legalPositionOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </TextField>
           </Stack>
           <TextField
@@ -184,8 +169,11 @@ export const ClientModal: React.FC<ClientModalProps> = ({
               native: true,
             }}
           >
-            <option value="invoice">請求書払い</option>
-            <option value="stripe">Stripe</option>
+            {paymentMethodOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </TextField>
         </Stack>
       </DialogContent>

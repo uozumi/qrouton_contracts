@@ -17,77 +17,47 @@ import {
   Tooltip,
 } from '@mui/material';
 import { Edit as EditIcon, Add as AddIcon } from '@mui/icons-material';
-import { supabase } from '../lib/supabase';
 import { formatDate } from '../utils/dateFormat';
 import { formatClientName } from '../utils/clientFormat';
 import { ClientModal } from '../components/modals/ClientModal';
-
-interface Client {
-  id: string;
-  name: string;
-  legal_type: string;
-  legal_position: string;
-  department: string;
-  default_contact_name: string;
-  default_contact_email: string;
-  payment_method: string;
-  first_contract_date: string | null;
-}
-
-interface ClientFormData {
-  name: string;
-  legal_type: string;
-  legal_position: string;
-  department: string;
-  default_contact_name: string;
-  default_contact_email: string;
-  payment_method: string;
-}
-
-type SortField = 'name' | 'first_contract_date';
-type SortOrder = 'asc' | 'desc';
+import {
+  Client,
+  ClientFormData,
+  ClientSortField as SortField
+} from '../types';
+import { useClients } from '../hooks/useClients';
+import { useTableSort } from '../hooks/useTableSort';
 
 export const ClientsPage = () => {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [sortField, setSortField] = useState<SortField>('first_contract_date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [filterKeyword, setFilterKeyword] = useState('');
+
+  const { clients, loading, fetchClients, createClient, updateClient } = useClients();
+
+  // フィルタリング
+  const filteredData = clients.filter(client => {
+    if (!filterKeyword) return true;
+    
+    const keyword = filterKeyword.toLowerCase();
+    return (
+      client.name.toLowerCase().includes(keyword) ||
+      (client.department && client.department.toLowerCase().includes(keyword)) ||
+      (client.default_contact_name && client.default_contact_name.toLowerCase().includes(keyword)) ||
+      (client.default_contact_email && client.default_contact_email.toLowerCase().includes(keyword))
+    );
+  });
+
+  // ソート
+  const { sortField, sortOrder, sortedData, handleSort } = useTableSort(
+    filteredData,
+    'first_contract_date' as SortField,
+    'desc'
+  );
 
   useEffect(() => {
     fetchClients();
-  }, []);
-
-  const fetchClients = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('clients')
-        .select(`
-          *,
-          contracts!inner(start_date)
-        `)
-        .order('name');
-
-      if (error) throw error;
-
-      const processedClients = data?.map((client: any) => ({
-        ...client,
-        first_contract_date: client.contracts?.length > 0 
-          ? client.contracts.reduce((earliest: string, contract: any) => 
-              new Date(contract.start_date) < new Date(earliest) ? contract.start_date : earliest
-            , client.contracts[0].start_date)
-          : null
-      })) || [];
-
-      setClients(processedClients);
-    } catch (error) {
-      console.error('クライアント情報の取得に失敗しました:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [fetchClients]);
 
   const handleOpenDialog = (client?: Client) => {
     setEditingClient(client || null);
@@ -102,64 +72,19 @@ export const ClientsPage = () => {
   const handleSubmit = async (formData: ClientFormData) => {
     try {
       if (editingClient) {
-        const { error } = await supabase
-          .from('clients')
-          .update(formData)
-          .eq('id', editingClient.id);
-        if (error) throw error;
+        await updateClient(editingClient.id, formData);
       } else {
-        const { error } = await supabase
-          .from('clients')
-          .insert([formData]);
-        if (error) throw error;
+        await createClient(formData);
       }
-
       handleCloseDialog();
-      fetchClients();
     } catch (error) {
-      console.error('クライアント情報の保存に失敗しました:', error);
-    }
-  };
-
-  const handleSort = (field: SortField) => {
-    if (field === sortField) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortOrder('asc');
+      // エラーハンドリングは各hookで実施済み
     }
   };
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilterKeyword(e.target.value);
   };
-
-  const filteredClients = clients.filter(client => {
-    if (!filterKeyword) return true;
-    
-    const keyword = filterKeyword.toLowerCase();
-    return (
-      client.name.toLowerCase().includes(keyword) ||
-      (client.department && client.department.toLowerCase().includes(keyword)) ||
-      (client.default_contact_name && client.default_contact_name.toLowerCase().includes(keyword)) ||
-      (client.default_contact_email && client.default_contact_email.toLowerCase().includes(keyword))
-    );
-  });
-
-  const sortedClients = [...filteredClients].sort((a, b) => {
-    const multiplier = sortOrder === 'asc' ? 1 : -1;
-    
-    switch (sortField) {
-      case 'name':
-        return multiplier * a.name.localeCompare(b.name);
-      case 'first_contract_date':
-        const dateA = a.first_contract_date ? new Date(a.first_contract_date).getTime() : 0;
-        const dateB = b.first_contract_date ? new Date(b.first_contract_date).getTime() : 0;
-        return multiplier * (dateA - dateB);
-      default:
-        return 0;
-    }
-  });
 
   if (loading) {
     return <Typography>読み込み中...</Typography>;
@@ -182,7 +107,7 @@ export const ClientsPage = () => {
         <Stack direction="row" spacing={4} alignItems="center">
           <Box>
             <Typography variant="subtitle2" color="text.secondary">表示件数</Typography>
-            <Typography variant="h6">{sortedClients.length}件</Typography>
+            <Typography variant="h6">{sortedData.length}件</Typography>
           </Box>
           <TextField
             label="キーワード検索"
@@ -195,7 +120,7 @@ export const ClientsPage = () => {
         </Stack>
       </Paper>
 
-      <TableContainer component={Paper}>
+      <TableContainer component={Paper} sx={{ minWidth: 800 }}>
         <Table>
           <TableHead>
             <TableRow>
@@ -203,7 +128,7 @@ export const ClientsPage = () => {
                 <TableSortLabel
                   active={sortField === 'name'}
                   direction={sortField === 'name' ? sortOrder : 'asc'}
-                  onClick={() => handleSort('name')}
+                  onClick={() => handleSort('name' as SortField)}
                 >
                   クライアント
                 </TableSortLabel>
@@ -214,7 +139,7 @@ export const ClientsPage = () => {
                 <TableSortLabel
                   active={sortField === 'first_contract_date'}
                   direction={sortField === 'first_contract_date' ? sortOrder : 'asc'}
-                  onClick={() => handleSort('first_contract_date')}
+                  onClick={() => handleSort('first_contract_date' as SortField)}
                 >
                   初回契約日
                 </TableSortLabel>
@@ -223,8 +148,22 @@ export const ClientsPage = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {sortedClients.map((client) => (
-              <TableRow key={client.id}>
+            {sortedData.map((client) => (
+              <TableRow 
+                key={client.id}
+                sx={{
+                  '&:hover': {
+                    backgroundColor: 'action.hover',
+                    '& .edit-button': {
+                      opacity: 1,
+                    }
+                  },
+                  '& .edit-button': {
+                    opacity: 0,
+                    transition: 'opacity 0.2s ease-in-out',
+                  }
+                }}
+              >
                 <TableCell>
                   {formatClientName(client)}
                 </TableCell>
@@ -237,7 +176,7 @@ export const ClientsPage = () => {
                 </TableCell>
                 <TableCell align="center">
                   <Tooltip title="編集">
-                    <IconButton onClick={() => handleOpenDialog(client)} size="small">
+                    <IconButton onClick={() => handleOpenDialog(client)} size="small" className="edit-button">
                       <EditIcon />
                     </IconButton>
                   </Tooltip>

@@ -15,65 +15,13 @@ import {
 } from '@mui/material';
 import { supabase } from '../../lib/supabase';
 import { formatClientName } from '../../utils/clientFormat';
-
-interface Contract {
-  id: string;
-  client: {
-    id: string;
-    name: string;
-    department: string;
-  };
-  plan: {
-    id: string;
-    name: string;
-  };
-  price: number;
-  start_date: string;
-  end_date: string;
-  auto_renew: boolean;
-  status: string;
-  contact_name: string;
-  contact_email: string;
-  payment_method: string;
-}
-
-interface Client {
-  id: string;
-  name: string;
-  department: string;
-}
-
-interface Plan {
-  id: string;
-  name: string;
-  price_monthly: number;
-  price_yearly: number;
-  duration_months: number;
-}
-
-interface ContractFormData {
-  client_id: string;
-  plan_id: string;
-  price: number;
-  start_date: string;
-  end_date: string;
-  auto_renew: boolean;
-  status: string;
-  contact_name: string;
-  contact_email: string;
-  payment_method: string;
-}
-
-const statusOptions = [
-  { value: 'active', label: '有効' },
-  { value: 'pending', label: '準備中' },
-  { value: 'expired', label: '期限切れ' },
-];
-
-const paymentMethodOptions = [
-  { value: 'invoice', label: '請求書払い' },
-  { value: 'stripe', label: 'Stripe' },
-];
+import {
+  Contract,
+  SimpleClient as Client,
+  Plan,
+  ContractFormData,
+  statusOptions
+} from '../../types';
 
 const initialFormData: ContractFormData = {
   client_id: '',
@@ -85,7 +33,6 @@ const initialFormData: ContractFormData = {
   status: 'active',
   contact_name: '',
   contact_email: '',
-  payment_method: '',
 };
 
 interface ContractModalProps {
@@ -121,7 +68,6 @@ export const ContractModal: React.FC<ContractModalProps> = ({
         status: editingContract.status || 'pending',
         contact_name: editingContract.contact_name || '',
         contact_email: editingContract.contact_email || '',
-        payment_method: editingContract.payment_method || '',
       });
     } else {
       setFormData(initialFormData);
@@ -297,21 +243,6 @@ export const ContractModal: React.FC<ContractModalProps> = ({
             required
           >
             {statusOptions.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            select
-            name="payment_method"
-            label="支払い方法"
-            value={formData.payment_method}
-            onChange={handleInputChange}
-            fullWidth
-            required
-          >
-            {paymentMethodOptions.map((option) => (
               <MenuItem key={option.value} value={option.value}>
                 {option.label}
               </MenuItem>

@@ -9,21 +9,10 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-
-interface Plan {
-  id: string;
-  name: string;
-  price_monthly: number;
-  price_yearly: number;
-  duration_months: number;
-}
-
-interface PlanFormData {
-  name: string;
-  price_monthly: number;
-  price_yearly: number;
-  duration_months: number;
-}
+import {
+  Plan,
+  PlanFormData
+} from '../../types';
 
 const initialFormData: PlanFormData = {
   name: '',
