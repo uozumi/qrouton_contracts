@@ -37,7 +37,7 @@ import { useContracts } from '../hooks/useContracts';
 import { useClients } from '../hooks/useClients';
 import { usePlans } from '../hooks/usePlans';
 
-type SortField = 'client.name' | 'plan.name' | 'start_date';
+type SortField = 'client.name' | 'plan.name' | 'price' | 'start_date';
 
 export const ActiveContractsPage = () => {
   const currentDate = new Date();
@@ -47,7 +47,7 @@ export const ActiveContractsPage = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [simpleClients, setSimpleClients] = useState<SimpleClient[]>([]);
-  const [includeDomainOption, setIncludeDomainOption] = useState(true);
+  const [selectedPlans, setSelectedPlans] = useState<Record<string, boolean>>({});
   const [sortField, setSortField] = useState<SortField>('client.name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
@@ -70,6 +70,17 @@ export const ActiveContractsPage = () => {
   useEffect(() => {
     fetchPlans();
   }, [fetchPlans]);
+
+  // プランが読み込まれたときに初期選択状態を設定
+  useEffect(() => {
+    if (plans.length > 0) {
+      const initialSelectedPlans = plans.reduce((acc, plan) => {
+        acc[plan.name] = true; // 初期状態は全てのプランを選択
+        return acc;
+      }, {} as Record<string, boolean>);
+      setSelectedPlans(initialSelectedPlans);
+    }
+  }, [plans]);
 
   const handleOpenDialog = (contract: Contract) => {
     setEditingContract(contract);
@@ -113,7 +124,7 @@ export const ActiveContractsPage = () => {
 
   const calculateTotalAmount = (contracts: Contract[]) => {
     return contracts
-      .filter(contract => includeDomainOption || contract.plan?.name !== '独自ドメインオプション利用料')
+      .filter(contract => selectedPlans[contract.plan?.name || ''])
       .reduce((sum, contract) => sum + (contract.price || 0), 0);
   };
 
@@ -134,18 +145,53 @@ export const ActiveContractsPage = () => {
       count: counts[planName] || 0
     }));
 
-    // 独自ドメインオプションを除外する場合はフィルタリング
-    const filteredResult = includeDomainOption 
-      ? result 
-      : result.filter(item => item.planName !== '独自ドメインオプション利用料');
-
     // プラン名でソート（あいうえお順）
-    return filteredResult.sort((a, b) => a.planName.localeCompare(b.planName, 'ja'));
+    return result.sort((a, b) => a.planName.localeCompare(b.planName, 'ja'));
   };
 
   const filteredContracts = contracts.filter(
-    contract => includeDomainOption || contract.plan?.name !== '独自ドメインオプション利用料'
+    contract => selectedPlans[contract.plan?.name || '']
   );
+
+  const handlePlanToggle = (planName: string) => {
+    setSelectedPlans(prev => ({
+      ...prev,
+      [planName]: !prev[planName]
+    }));
+  };
+
+  const handleSelectAllPlans = () => {
+    const allSelected = plans.reduce((acc, plan) => {
+      acc[plan.name] = true;
+      return acc;
+    }, {} as Record<string, boolean>);
+    setSelectedPlans(allSelected);
+  };
+
+  const handleDeselectAllPlans = () => {
+    const allDeselected = plans.reduce((acc, plan) => {
+      acc[plan.name] = false;
+      return acc;
+    }, {} as Record<string, boolean>);
+    setSelectedPlans(allDeselected);
+  };
+
+  const getAllPlansSelected = () => {
+    return plans.length > 0 && plans.every(plan => selectedPlans[plan.name]);
+  };
+
+  const getSomeButNotAllPlansSelected = () => {
+    const selectedCount = plans.filter(plan => selectedPlans[plan.name]).length;
+    return selectedCount > 0 && selectedCount < plans.length;
+  };
+
+  const handleMasterCheckboxChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.checked) {
+      handleSelectAllPlans();
+    } else {
+      handleDeselectAllPlans();
+    }
+  };
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
@@ -174,6 +220,8 @@ export const ActiveContractsPage = () => {
         return multiplier * ((a.client?.name || '').localeCompare(b.client?.name || ''));
       case 'plan.name':
         return multiplier * ((a.plan?.name || '').localeCompare(b.plan?.name || ''));
+      case 'price':
+        return multiplier * ((a.price || 0) - (b.price || 0));
       case 'start_date':
         return multiplier * (new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
       default:
@@ -189,69 +237,85 @@ export const ActiveContractsPage = () => {
     <Box>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
         <Typography variant="h5">有効契約一覧</Typography>
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel>対象月</InputLabel>
-          <Select
-            value={selectedMonth}
-            label="対象月"
-            onChange={handleMonthChange}
-          >
-            {generateMonthOptions().map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <Stack direction="row" spacing={4} alignItems="center">
+          <Box>
+            <Typography variant="subtitle2" color="text.secondary">契約中件数</Typography>
+            <Typography variant="h6">{filteredContracts.length}件</Typography>
+          </Box>
+          <Box>
+            <Typography variant="subtitle2" color="text.secondary">合計金額（月額）</Typography>
+            <Typography variant="h6">
+              ¥{Math.round(calculateTotalAmount(contracts) / 12).toLocaleString()}
+            </Typography>
+          </Box>
+          <FormControl sx={{ minWidth: 200 }}>
+            <InputLabel>対象月</InputLabel>
+            <Select
+              value={selectedMonth}
+              label="対象月"
+              onChange={handleMonthChange}
+            >
+              {generateMonthOptions().map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Stack>
       </Stack>
 
       <Paper sx={{ p: 2, mb: 2 }}>
-        <Stack spacing={3}>
-          <Stack direction="row" spacing={4} alignItems="center">
-            <Box>
-              <Typography variant="subtitle2" color="text.secondary">契約中件数</Typography>
-              <Typography variant="h6">{filteredContracts.length}件</Typography>
-            </Box>
-            <Box>
-              <Typography variant="subtitle2" color="text.secondary">合計金額（月額）</Typography>
-              <Typography variant="h6">
-                ¥{Math.round(calculateTotalAmount(contracts) / 12).toLocaleString()}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={includeDomainOption}
-                    onChange={(e) => setIncludeDomainOption(e.target.checked)}
-                  />
-                }
-                label="独自ドメインオプション"
-              />
-            </Box>
-          </Stack>
-          <Box>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>プラン別契約件数</Typography>
-            <TableContainer component={Paper} sx={{ maxWidth: 500 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>プラン名</TableCell>
-                    <TableCell align="right">件数</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {calculatePlanCounts(filteredContracts).map(({ planName, count }) => (
-                    <TableRow key={planName}>
+        <Box>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>プラン別契約件数</Typography>
+          <TableContainer component={Paper} sx={{ maxWidth: 600 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell width="60px" align="center">
+                    <Checkbox
+                      checked={getAllPlansSelected()}
+                      indeterminate={getSomeButNotAllPlansSelected()}
+                      onChange={handleMasterCheckboxChange}
+                      size="small"
+                    />
+                  </TableCell>
+                  <TableCell>プラン名</TableCell>
+                  <TableCell align="right">件数</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {calculatePlanCounts(contracts).map(({ planName, count }) => {
+                  const isSelected = selectedPlans[planName] || false;
+                  const filteredCount = isSelected ? 
+                    filteredContracts.filter(c => c.plan?.name === planName).length : 0;
+                  
+                  return (
+                    <TableRow 
+                      key={planName}
+                      sx={{ 
+                        opacity: isSelected ? 1 : 0.5,
+                        backgroundColor: isSelected ? 'inherit' : 'action.hover'
+                      }}
+                    >
+                      <TableCell align="center">
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={() => handlePlanToggle(planName)}
+                          size="small"
+                        />
+                      </TableCell>
                       <TableCell>{planName}</TableCell>
-                      <TableCell align="right">{count}件</TableCell>
+                      <TableCell align="right">
+                        {isSelected ? `${filteredCount}件` : `0件 (${count}件)`}
+                      </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Box>
-        </Stack>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
       </Paper>
 
       <TableContainer component={Paper} sx={{ minWidth: 800 }}>
@@ -274,6 +338,15 @@ export const ActiveContractsPage = () => {
                   onClick={() => handleSort('plan.name')}
                 >
                   プラン・料金
+                </TableSortLabel>
+              </TableCell>
+              <TableCell>
+                <TableSortLabel
+                  active={sortField === 'price'}
+                  direction={sortField === 'price' ? sortOrder : 'asc'}
+                  onClick={() => handleSort('price')}
+                >
+                  料金
                 </TableSortLabel>
               </TableCell>
               <TableCell>
@@ -321,6 +394,9 @@ export const ActiveContractsPage = () => {
                     name: contract.plan?.name || '', 
                     price: contract.price 
                   })}
+                </TableCell>
+                <TableCell>
+                  {contract.price ? `¥${Math.round(contract.price / 12).toLocaleString()}` : ''}
                 </TableCell>
                 <TableCell>
                   {formatContractPeriod(contract.start_date, contract.end_date)}
